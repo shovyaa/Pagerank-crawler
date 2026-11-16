@@ -1,0 +1,8 @@
+streamlit
+requests
+beautifulsoup4
+networkx
+scipy
+pandas
+matplotlib
+pyvis
