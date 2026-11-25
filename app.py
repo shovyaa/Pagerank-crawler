@@ -278,7 +278,7 @@ if st.button("Mulai Crawling"):
     )
 
     # ---------- 8e. Legenda warna ----------
-    st.markdown("### Keterangan Warna")
+    st.markdown("### Warna")
 
     st.markdown("""
     - 🟩 **Hijau terang (★, border tebal)** : PageRank peringkat 1
