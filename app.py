@@ -9,13 +9,16 @@ import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 from pyvis.network import Network
 
-MAX_PAGES = 50
+# Batas MAX_PAGES dihapus: crawling berjalan sampai semua halaman
+# pada kedalaman yang dipilih habis dikunjungi.
 SKIP = (".jpg", ".png", ".gif", ".pdf", ".zip", ".docx")
+
+WARNA_RANK1 = "#00c853"  # Hijau terang khusus PageRank peringkat 1
 
 
 # ================= CRAWLING =================
 def crawl(seed, max_depth):
-    """Crawling BFS dan menyimpan kedalaman setiap halaman."""
+    """Crawling BFS tanpa batas jumlah halaman, menyimpan kedalaman tiap halaman."""
 
     queue = deque([(seed, 0)])
     visited = {seed}
@@ -23,7 +26,7 @@ def crawl(seed, max_depth):
     depth_pages = {seed: 0}
     dibuka = 0
 
-    while queue and dibuka < MAX_PAGES:
+    while queue:
         url, depth = queue.popleft()
 
         try:
@@ -62,11 +65,12 @@ def crawl(seed, max_depth):
 
 # ================= GRAPH INTERAKTIF =================
 def graph_interaktif(G, pr, depth_pages):
-    """Graph berwarna berdasarkan depth dan menampilkan detail saat diklik."""
+    """Graph berwarna berdasarkan depth; node PageRank #1 diberi warna khusus."""
 
     urut = sorted(pr, key=pr.get, reverse=True)
     top10 = urut[:10]
-    sub = G.subgraph(urut[:50])
+    rank1 = urut[0]
+    sub = G  # Tampilkan seluruh node & edge hasil crawling (tanpa dipotong)
 
     # Warna untuk setiap kedalaman
     warna_depth = {
@@ -86,20 +90,32 @@ def graph_interaktif(G, pr, depth_pages):
     for n in sub.nodes():
         p = urlparse(n)
         d = depth_pages.get(n, -1)
+        is_rank1 = n == rank1
 
-        # Warna berdasarkan kedalaman
-        warna = warna_depth.get(d, "#808080")
+        # Rank 1 -> warna khusus, selain itu berdasarkan kedalaman
+        warna = WARNA_RANK1 if is_rank1 else warna_depth.get(d, "#808080")
+
+        judul = (
+            f"{'<b>PERINGKAT 1 PAGERANK</b><br>' if is_rank1 else ''}"
+            f"URL: {n}<br>"
+            f"Kedalaman: {d}<br>"
+            f"PageRank: {pr[n]:.5f}"
+        )
 
         net.add_node(
             n,
-            label=p.netloc + p.path[:15] if n in top10 else " ",
-            title=f"""
-            URL: {n}<br>
-            Kedalaman: {d}<br>
-            PageRank: {pr[n]:.5f}
-            """,
+            label=(
+                "★ " + p.netloc + p.path[:15] if is_rank1
+                else (p.netloc + p.path[:15] if n in top10 else " ")
+            ),
+            title=judul,
             size=10 + pr[n] * 600,
-            color=warna
+            color={
+                "background": warna,
+                "border": "#1b5e20" if is_rank1 else warna,
+            },
+            borderWidth=4 if is_rank1 else 1,
+            font={"size": 18, "bold": True} if is_rank1 else {"size": 14},
         )
 
     for a, b in sub.edges():
@@ -153,7 +169,7 @@ depth = st.number_input(
 
 if st.button("Mulai Crawling"):
 
-    with st.spinner("Sedang crawling..."):
+    with st.spinner("Sedang crawling (tanpa batas halaman, mohon tunggu)..."):
         edges, dibuka, depth_pages = crawl(seed.rstrip("/"), depth)
 
     if not edges:
@@ -168,6 +184,7 @@ if st.button("Mulai Crawling"):
 
     # Menghitung PageRank
     pr = nx.pagerank(G, alpha=0.85)
+    rank1 = max(pr, key=pr.get)
 
     # ================= METRIK =================
     m1, m2, m3 = st.columns(3)
@@ -175,6 +192,8 @@ if st.button("Mulai Crawling"):
     m1.metric("Halaman dibuka", dibuka)
     m2.metric("Jumlah node (halaman)", G.number_of_nodes())
     m3.metric("Jumlah edge (hubungan)", G.number_of_edges())
+
+    st.success(f"PageRank peringkat 1: {rank1} ({pr[rank1]:.5f})")
 
     # ================= GRAPH =================
     st.subheader("Graph Hubungan Antar Website")
@@ -185,9 +204,10 @@ if st.button("Mulai Crawling"):
     )
 
     # ================= LEGENDA =================
-    st.markdown("### Keterangan Warna Kedalaman")
+    st.markdown("### Keterangan Warna")
 
     st.markdown("""
+    - 🟩 **Hijau terang (★, border tebal)** : PageRank peringkat 1
     - 🟥 **Merah** : Depth 0 (halaman awal)
     - 🟨 **Kuning** : Depth 1
     - 🟦 **Biru** : Depth 2
