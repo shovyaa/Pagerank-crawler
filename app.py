@@ -1,4 +1,4 @@
-from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin, urlparse, urldefrag
 
 import requests
@@ -17,48 +17,68 @@ WARNA_RANK1 = "#00c853"  # Hijau terang khusus PageRank peringkat 1
 
 
 # ================= CRAWLING =================
-def crawl(seed, max_depth):
-    """Crawling BFS tanpa batas jumlah halaman, menyimpan kedalaman tiap halaman."""
+def ambil_html(url):
+    """Mengambil HTML satu halaman (dipanggil paralel). None jika gagal."""
+    try:
+        r = requests.get(
+            url,
+            timeout=3,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if "text/html" not in r.headers.get("Content-Type", ""):
+            return None
+        return r.text
+    except Exception:
+        return None
 
-    queue = deque([(seed, 0)])
+
+def crawl(seed, max_depth):
+    """BFS per level dengan pengambilan halaman paralel, tanpa batas halaman.
+
+    Halaman pada kedalaman maksimal tidak perlu dibuka, karena link di
+    dalamnya tidak dicatat. Node-nya tetap muncul lewat edge dari level
+    sebelumnya, sehingga hasil graph sama dengan versi sebelumnya.
+    """
+
     visited = {seed}
     edges = []
     depth_pages = {seed: 0}
     dibuka = 0
+    level = [seed]
 
-    while queue:
-        url, depth = queue.popleft()
+    for depth in range(max_depth):
+        if not level:
+            break
 
-        try:
-            html = requests.get(
-                url,
-                timeout=8,
-                headers={"User-Agent": "Mozilla/5.0"}
-            ).text
-        except Exception:
-            continue
+        with ThreadPoolExecutor(max_workers=20) as ex:
+            hasil = list(ex.map(ambil_html, level))
 
-        dibuka += 1
+        berikutnya = []
 
-        for a in BeautifulSoup(html, "html.parser").find_all("a", href=True):
-            link = urldefrag(urljoin(url, a["href"]))[0].rstrip("/")
-
-            if (
-                not link.startswith("http")
-                or link == url
-                or link.lower().endswith(SKIP)
-            ):
+        for url, html in zip(level, hasil):
+            if html is None:
                 continue
 
-            # Hanya menyimpan hubungan sampai kedalaman yang dipilih
-            if depth < max_depth:
+            dibuka += 1
+
+            for a in BeautifulSoup(html, "html.parser").find_all("a", href=True):
+                link = urldefrag(urljoin(url, a["href"]))[0].rstrip("/")
+
+                if (
+                    not link.startswith("http")
+                    or link == url
+                    or link.lower().endswith(SKIP)
+                ):
+                    continue
+
                 edges.append((url, link))
 
-                # Memasukkan halaman jika belum pernah ditemukan
                 if link not in visited:
                     visited.add(link)
                     depth_pages[link] = depth + 1
-                    queue.append((link, depth + 1))
+                    berikutnya.append(link)
+
+        level = berikutnya
 
     return edges, dibuka, depth_pages
 
@@ -129,7 +149,7 @@ def graph_interaktif(G, pr, depth_pages):
           "damping": 0.6,
           "avoidOverlap": 0.5
         },
-        "stabilization": {"iterations": 200}
+        "stabilization": {"iterations": 100, "updateInterval": 50}
       },
       "interaction": {
         "hover": true,
@@ -203,7 +223,7 @@ if st.button("Mulai Crawling"):
         height=670
     )
 
-    # ================= LEGENDA =================
+    # ================= bawah =================
     st.markdown("### Keterangan Warna")
 
     st.markdown("""
